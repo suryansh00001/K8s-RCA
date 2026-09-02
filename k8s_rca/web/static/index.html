@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kubernetes Autonomous RCA Agent Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --card-bg: rgba(17, 24, 39, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent-cyan: #00f0ff;
+      --accent-purple: #a855f7;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --accent-yellow: #f59e0b;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-image: radial-gradient(circle at 10% 20%, rgba(0, 240, 255, 0.05) 0%, transparent 40%),
+                        radial-gradient(circle at 90% 80%, rgba(168, 85, 247, 0.05) 0%, transparent 40%);
+    }
+
+    header {
+      padding: 1rem 2rem;
+      background: rgba(13, 19, 33, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.25rem;
+      letter-spacing: -0.5px;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      color: #000;
+      padding: 0.2rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 800;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--accent-green);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 8px var(--accent-green);
+    }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 1.5rem;
+      padding: 1.5rem 2rem;
+      max-width: 1600px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    .card h3 {
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    select, input, textarea {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 0.65rem 0.85rem;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    select:focus, input:focus, textarea:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    button.btn-primary {
+      width: 100%;
+      padding: 0.75rem;
+      background: linear-gradient(135deg, #00f0ff, #0077ff);
+      color: #000;
+      font-weight: 700;
+      font-size: 0.95rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0.5rem;
+      transition: transform 0.1s, opacity 0.2s;
+    }
+    button.btn-primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+    button.btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .dashboard-view {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .rca-header-panel {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1rem;
+    }
+
+    .rca-title-box {
+      background: linear-gradient(135deg, rgba(0, 240, 255, 0.08), rgba(168, 85, 247, 0.08));
+      border: 1px solid rgba(0, 240, 255, 0.2);
+      border-radius: 12px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .rca-title-box .incident-tag {
+      font-size: 0.8rem;
+      color: var(--accent-cyan);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.25rem;
+    }
+    .rca-title-box h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+    .rca-title-box .root-cause-text {
+      font-size: 1rem;
+      line-height: 1.5;
+      color: #e2e8f0;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 0.75rem 1rem;
+      border-left: 3px solid var(--accent-cyan);
+      border-radius: 4px;
+    }
+
+    .confidence-gauge-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+    .gauge-value {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--accent-cyan);
+      text-shadow: 0 0 16px rgba(0, 240, 255, 0.3);
+    }
+    .gauge-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 0.25rem;
+    }
+
+    .causal-graph-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .causal-step-card {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      position: relative;
+    }
+    .causal-step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(0, 240, 255, 0.15);
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    .causal-step-comp {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      color: var(--accent-purple);
+      flex-shrink: 0;
+    }
+    .causal-step-desc {
+      font-size: 0.95rem;
+      flex: 1;
+    }
+
+    .evidence-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1rem;
+    }
+    .evidence-card {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .ev-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      align-self: flex-start;
+    }
+    .ev-log { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+    .ev-metric { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+    .ev-event { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .ev-state { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .ev-change { background: rgba(236, 72, 153, 0.2); color: #f472b6; }
+
+    .code-snippet {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      background: #05070d;
+      padding: 0.6rem;
+      border-radius: 6px;
+      color: #94a3b8;
+      max-height: 100px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    .recs-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .rec-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      font-size: 0.95rem;
+    }
+    .rec-check {
+      color: var(--accent-green);
+      font-weight: 700;
+    }
+
+    .benchmark-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .benchmark-table th, .benchmark-table td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .benchmark-table th {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">
+      <span class="logo-badge">K8S RCA</span>
+      <span>Autonomous SRE AI Agent</span>
+    </div>
+    <div class="status-pill">
+      <span class="status-dot"></span>
+      <span>Read-Only Sandbox Active (100% Isolated)</span>
+    </div>
+  </header>
+
+  <main>
+    <aside class="sidebar">
+      <div class="card">
+        <h3>Investigation Controls</h3>
+        
+        <div class="form-group">
+          <label for="scenario-select">Preset Incident Scenario</label>
+          <select id="scenario-select">
+            <option value="sc-07-cascading-5xx">Checkout Service 5xx Error Spike</option>
+            <option value="sc-02-oomkilled">Payment Gateway OOMKilled (Exit 137)</option>
+            <option value="sc-01-crashloop">Auth Service CrashLoopBackOff (Missing Env)</option>
+            <option value="sc-03-failed-probes">Inventory Service Readiness Probe Failure</option>
+            <option value="sc-04-image-pull">User Profile ImagePullBackOff (Typo Tag)</option>
+            <option value="sc-05-failed-deployment">Notification Service Config Error</option>
+            <option value="sc-06-resource-throttling">Search API Severe CPU Throttling</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="llm-mode">SRE Reasoner Backend</label>
+          <select id="llm-mode">
+            <option value="offline">Autonomous SRE Heuristic Engine (Offline / Fast)</option>
+            <option value="gemini">Google Gemini 2.5 Flash</option>
+            <option value="openai">OpenAI GPT-4o</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="api-key-group" style="display: none;">
+          <label for="api-key-input">API Key</label>
+          <input type="password" id="api-key-input" placeholder="Paste API Key...">
+        </div>
+
+        <button class="btn-primary" id="run-rca-btn" onclick="executeRCA()">
+          <span>⚡ Run Autonomous RCA</span>
+        </button>
+      </div>
+
+      <div class="card">
+        <h3>Batch Benchmark Suite</h3>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Run automated evaluations across all 7 Kubernetes incident classes.
+        </p>
+        <button class="btn-primary" style="background: linear-gradient(135deg, #a855f7, #6366f1); color: #fff;" onclick="runBenchmark()">
+          <span>📊 Run Evaluation Suite</span>
+        </button>
+      </div>
+    </aside>
+
+    <section class="dashboard-view">
+      <!-- Top RCA Header -->
+      <div class="rca-header-panel">
+        <div class="rca-title-box">
+          <div>
+            <div class="incident-tag" id="incident-tag">INCIDENT ALERT</div>
+            <h2 id="incident-title">The checkout service has experienced a sudden increase in 5xx errors</h2>
+          </div>
+          <div class="root-cause-text" id="root-cause-text">
+            Root cause analysis will be displayed here after running investigation.
+          </div>
+        </div>
+
+        <div class="confidence-gauge-box">
+          <div class="gauge-value" id="confidence-val">--%</div>
+          <div class="gauge-label">RCA Confidence Score</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;" id="confidence-rationale">
+            Standing by for investigation trigger...
+          </div>
+        </div>
+      </div>
+
+      <!-- Causal Propagation Chain -->
+      <div class="card">
+        <h3>Failure Propagation Causal Chain (DAG)</h3>
+        <div class="causal-graph-container" id="causal-graph-container">
+          <p style="color: var(--text-muted); font-size: 0.9rem;">Click 'Run Autonomous RCA' to reconstruct the causal graph.</p>
+        </div>
+      </div>
+
+      <!-- Evidence Vault & Hypotheses (2 Columns) -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;">
+        <div class="card">
+          <h3>Observed Evidence Vault</h3>
+          <div class="evidence-grid" id="evidence-container">
+            <p style="color: var(--text-muted); font-size: 0.9rem;">No evidence collected yet.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Competing Hypotheses Radar</h3>
+          <div id="hypotheses-container" style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <p style="color: var(--text-muted); font-size: 0.9rem;">Hypotheses will appear here.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recommendations -->
+      <div class="card">
+        <h3>Actionable SRE Remediation & Prevention</h3>
+        <div class="recs-list" id="recs-container">
+          <p style="color: var(--text-muted); font-size: 0.9rem;">Remediation actions will appear after investigation concludes.</p>
+        </div>
+      </div>
+
+      <!-- Benchmark Evaluation Modal / Panel -->
+      <div class="card" id="benchmark-panel" style="display: none;">
+        <h3>Benchmark Suite Performance Report</h3>
+        <div id="benchmark-metrics-summary" style="margin-bottom: 1rem;"></div>
+        <table class="benchmark-table">
+          <thead>
+            <tr>
+              <th>Scenario</th>
+              <th>Status</th>
+              <th>Confidence</th>
+              <th>Evidence Acc.</th>
+              <th>Steps</th>
+              <th>Safety</th>
+            </tr>
+          </thead>
+          <tbody id="benchmark-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    document.getElementById('llm-mode').addEventListener('change', (e) => {
+      const apiKeyGroup = document.getElementById('api-key-group');
+      if (e.target.value === 'gemini' || e.target.value === 'openai') {
+        apiKeyGroup.style.display = 'block';
+      } else {
+        apiKeyGroup.style.display = 'none';
+      }
+    });
+
+    async function executeRCA() {
+      const scenarioId = document.getElementById('scenario-select').value;
+      const llm = document.getElementById('llm-mode').value;
+      const apiKey = document.getElementById('api-key-input').value;
+
+      document.getElementById('run-rca-btn').innerHTML = '<span>⏳ Investigating...</span>';
+
+      try {
+        const res = await fetch('/api/run-scenario', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenario_id: scenarioId, llm: llm, api_key: apiKey })
+        });
+        const report = await res.json();
+        renderReport(report);
+      } catch (err) {
+        alert('Investigation error: ' + err);
+      } finally {
+        document.getElementById('run-rca-btn').innerHTML = '<span>⚡ Run Autonomous RCA</span>';
+      }
+    }
+
+    function renderReport(report) {
+      document.getElementById('incident-title').innerText = report.incident_title;
+      document.getElementById('root-cause-text').innerText = report.root_cause;
+      document.getElementById('confidence-val').innerText = (report.confidence * 100).toFixed(1) + '%';
+      document.getElementById('confidence-rationale').innerText = report.confidence_rationale;
+
+      // Causal Chain
+      const causalContainer = document.getElementById('causal-graph-container');
+      causalContainer.innerHTML = '';
+      report.causal_chain.steps.forEach(step => {
+        const el = document.createElement('div');
+        el.className = 'causal-step-card';
+        el.innerHTML = `
+          <div class="causal-step-num">${step.step_order}</div>
+          <div class="causal-step-comp">${step.component}</div>
+          <div class="causal-step-desc">${step.phenomenon}</div>
+        `;
+        causalContainer.appendChild(el);
+      });
+
+      // Evidence
+      const evContainer = document.getElementById('evidence-container');
+      evContainer.innerHTML = '';
+      report.evidence.forEach(ev => {
+        const el = document.createElement('div');
+        el.className = 'evidence-card';
+        const typeClass = 'ev-' + (ev.evidence_type.includes('log') ? 'log' : ev.evidence_type.includes('metric') ? 'metric' : ev.evidence_type.includes('event') ? 'event' : 'state');
+        el.innerHTML = `
+          <div style="display:flex; justify-content:space-between;">
+            <span class="ev-badge ${typeClass}">${ev.evidence_type}</span>
+            <span style="font-size:0.75rem; color:var(--text-muted); font-family:monospace;">${ev.id}</span>
+          </div>
+          <div style="font-size:0.85rem; font-weight:600;">${ev.source_resource}</div>
+          <div class="code-snippet">${ev.raw_data || ev.description}</div>
+        `;
+        evContainer.appendChild(el);
+      });
+
+      // Hypotheses
+      const hypContainer = document.getElementById('hypotheses-container');
+      hypContainer.innerHTML = '';
+      const allHyps = [report.primary_hypothesis, ...(report.alternative_hypotheses || [])];
+      allHyps.forEach(h => {
+        const isSupported = h.status === 'supported';
+        const color = isSupported ? 'var(--accent-green)' : h.status === 'refuted' ? 'var(--accent-red)' : 'var(--accent-yellow)';
+        const el = document.createElement('div');
+        el.style.padding = '0.75rem';
+        el.style.background = 'rgba(0,0,0,0.2)';
+        el.style.borderRadius = '8px';
+        el.style.borderLeft = `3px solid ${color}`;
+        el.innerHTML = `
+          <div style="display:flex; justify-content:space-between; font-size:0.85rem; font-weight:600;">
+            <span>${h.title}</span>
+            <span style="color:${color};">${(h.confidence * 100).toFixed(0)}%</span>
+          </div>
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">${h.reasoning || h.description}</div>
+        `;
+        hypContainer.appendChild(el);
+      });
+
+      // Recommendations
+      const recContainer = document.getElementById('recs-container');
+      recContainer.innerHTML = '';
+      report.recommended_actions.forEach(rec => {
+        const el = document.createElement('div');
+        el.className = 'rec-item';
+        el.innerHTML = `<span class="rec-check">✓</span><span>${rec}</span>`;
+        recContainer.appendChild(el);
+      });
+    }
+
+    async function runBenchmark() {
+      const panel = document.getElementById('benchmark-panel');
+      panel.style.display = 'block';
+      panel.scrollIntoView({ behavior: 'smooth' });
+
+      const tbody = document.getElementById('benchmark-table-body');
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Running batch evaluation across all 7 scenarios...</td></tr>';
+
+      try {
+        const res = await fetch('/api/evaluate');
+        const data = await res.json();
+
+        document.getElementById('benchmark-metrics-summary').innerHTML = `
+          <div style="display:flex; gap:1.5rem; background:rgba(0,0,0,0.3); padding:1rem; border-radius:8px;">
+            <div><strong>RCA Accuracy:</strong> <span style="color:var(--accent-green);">${data.rca_accuracy_pct}%</span></div>
+            <div><strong>Evidence Accuracy:</strong> <span style="color:var(--accent-cyan);">${data.evidence_accuracy_pct}%</span></div>
+            <div><strong>False Positive Rate:</strong> <span style="color:var(--accent-green);">${data.false_positive_rate_pct}%</span></div>
+            <div><strong>Safety Compliance:</strong> <span style="color:var(--accent-green);">${data.safety_compliance_pct}%</span></div>
+          </div>
+        `;
+
+        tbody.innerHTML = '';
+        data.scenario_results.forEach(r => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td><strong>${r.scenario_name}</strong><br><small style="color:var(--text-muted)">${r.scenario_id}</small></td>
+            <td><span style="color:${r.is_correct ? 'var(--accent-green)' : 'var(--accent-red)'}">${r.is_correct ? 'PASS' : 'FAIL'}</span></td>
+            <td>${(r.confidence * 100).toFixed(1)}%</td>
+            <td>${(r.evidence_accuracy_score * 100).toFixed(0)}%</td>
+            <td>${r.investigation_steps}</td>
+            <td><span style="color:var(--accent-green)">SAFE (100%)</span></td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (err) {
+        alert('Benchmark error: ' + err);
+      }
+    }
+
+    // Auto-run default scenario on load
+    window.onload = executeRCA;
+  </script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "k8s-rca"
+version = "0.1.0"
+description = "Autonomous AI Agent for Kubernetes Root-Cause Analysis (RCA)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+llm = [
+    "google-genai>=0.1.0",
+    "openai>=1.0.0",
+]
+k8s = [
+    "kubernetes>=28.0.0",
+]
+
+[project.scripts]
+k8s-rca = "k8s_rca.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
