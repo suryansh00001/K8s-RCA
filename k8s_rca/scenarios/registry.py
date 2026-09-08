@@ -11,6 +11,7 @@ from .image_pull import ImagePullScenario
 from .failed_deployment import FailedDeploymentScenario
 from .resource_throttling import ResourceThrottlingScenario
 from .cascading_5xx import Cascading5xxScenario
+from .dependency_chain import DependencyChainScenario
 
 
 class ScenarioRegistry:
@@ -29,6 +30,7 @@ class ScenarioRegistry:
             FailedDeploymentScenario(),
             ResourceThrottlingScenario(),
             Cascading5xxScenario(),
+            DependencyChainScenario(),
         ]
         for s in defaults:
             self._scenarios[s.id] = s

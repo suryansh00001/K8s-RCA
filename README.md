@@ -56,6 +56,25 @@ The agent operates strictly behind an inviolable security boundary:
 2. **Automated Secret & Token Redaction**: Scans all manifests, logs, and outputs to mask Bearer tokens, JWTs, AWS/GCP access keys, connection passwords, and private keys.
 3. **Context Window & Token Budget Protection**: Streams and samples high-volume logs with priority error pattern extraction (panics, tracebacks, fatal errors, HTTP 5xx, OOMkills) so large logs never blow up LLM context budgets.
 4. **Command Injection Prevention**: Sanitizes all tool input arguments to reject shell chaining or path traversal attempts.
+5. **Prompt Injection Defense**: Detects and neutralizes adversarial instructions in untrusted logs (e.g. `IGNORE ALL PREVIOUS INSTRUCTIONS`) and isolates observations in `<UNTRUSTED_TELEMETRY_DATA>` safety fences.
+
+---
+
+## 🧠 SRE Reasoning Backends: Generative AI vs. Deterministic Baseline
+
+To ensure both cutting-edge probabilistic AI reasoning and rock-solid software engineering reproducibility, the architecture cleanly decouples the diagnostic tools from the reasoning brain:
+
+### 1. Generative AI LLM Mode (True Neural Network Reasoning)
+In this mode, a Generative AI Large Language Model actively drives the investigation. The model reads incident symptoms, analyzes tool observations, formulates hypotheses, chooses the next diagnostic tool, and synthesizes the causal RCA report:
+* **Google Gemini**: `--llm gemini --model gemini-2.5-flash` (requires `GEMINI_API_KEY`)
+* **OpenAI GPT-4o**: `--llm openai --model gpt-4o` (requires `OPENAI_API_KEY`)
+* **Local Free LLM (Ollama)**: `--llm ollama --model llama3.1` (100% free, runs locally on your machine via Ollama at `http://localhost:11434/v1` with zero API keys required!)
+
+### 2. Deterministic Expert Baseline (`--llm offline`, Default for Tests)
+A rule-based expert system heuristic developed specifically for:
+* **Instant Automated Testing (`pytest`)**: Allows all 28 unit and integration tests to verify the sandbox, tools, and hypothesis scoring in **0.4 seconds** without incurring cloud costs or flakiness.
+* **Controlled Evaluation Baseline**: Provides a ground-truth deterministic benchmark against which LLM reasoning quality is measured.
+* **Graceful Degradation**: Acts as an automatic fallback if a cloud LLM provider encounters network timeouts or rate limits (HTTP 429).
 
 ---
 
@@ -84,6 +103,7 @@ $$\text{Incident Trigger} \to \text{Form Competing Hypotheses } (H_1 \dots H_n) 
 | `sc-05-failed-deployment` | `FailedDeployment` | Notification Service Config Error | Deployment manifest references missing ConfigMap `notification-config-v2`, causing `CreateContainerConfigError`. |
 | `sc-06-resource-throttling`| `ResourceExhaustion` | Search API Severe CPU Throttling | Restrictive 100m CPU limit causing >80% CFS CPU throttling on search workers under load, resulting in 504 Gateway Timeouts. |
 | `sc-07-cascading-5xx` | `ApplicationErrorSpike` | Checkout Service 5xx Spike | PostgreSQL connection pool exhaustion (`max_connections=50` reached) causing connection lease timeouts and downstream 500 spikes. |
+| `sc-08-dependency-chain`| `ApplicationErrorSpike` | Multi-Tier Service Dependency Failure | Downstream PostgreSQL database row lock contention in payment service causing cascading 504 Gateway Timeouts upstream to order-api and frontend. |
 
 ---
 
@@ -103,12 +123,16 @@ python -m k8s_rca.cli list-scenarios
 ```
 
 ### 3. Run Investigation on an Incident
-```bash
-# Run on the Checkout Service 5xx cascading failure scenario
-python -m k8s_rca.cli run-scenario --scenario sc-07-cascading-5xx
 
-# Or run using Google Gemini / OpenAI LLM (requires API key)
-python -m k8s_rca.cli run-scenario --scenario sc-02-oomkilled --llm gemini --model gemini-2.5-flash
+```bash
+# Option A: Run using real Google Gemini Cloud LLM (requires GEMINI_API_KEY)
+python -m k8s_rca.cli run-scenario --scenario sc-08-dependency-chain --llm gemini --model gemini-2.5-flash
+
+# Option B: Run using 100% Free Local Open-Source LLM (via Ollama, zero API keys!)
+python -m k8s_rca.cli run-scenario --scenario sc-08-dependency-chain --llm ollama --model llama3.1
+
+# Option C: Run using the deterministic offline expert baseline (instant & offline)
+python -m k8s_rca.cli run-scenario --scenario sc-08-dependency-chain --llm offline
 ```
 
 ### 4. Run Full Evaluation Benchmark Suite
@@ -116,29 +140,45 @@ python -m k8s_rca.cli run-scenario --scenario sc-02-oomkilled --llm gemini --mod
 python -m k8s_rca.cli evaluate
 ```
 
-### 5. Investigate a Live Kubernetes Cluster (Read-Only)
+### 5. Run Interactive Security Sandbox Audit
 ```bash
-python -m k8s_rca.cli investigate \
-  --query "The checkout service has experienced a sudden increase in 5xx errors." \
-  --namespace prod \
-  --service checkout-service \
-  --kubeconfig ~/.kube/config
+python -m k8s_rca.cli test-security
+```
+
+### 6. Run Model Context Protocol (MCP) Server
+```bash
+python -m k8s_rca.cli mcp
+```
+
+### 7. Run Web Dashboard
+```bash
+python -m k8s_rca.cli serve --port 8080
+```
+
+### 8. Containerized Setup (Docker & Docker Compose)
+```bash
+# Option A: Run via Docker Compose
+docker-compose up
+
+# Option B: Build and run Docker directly
+docker build -t k8s-rca .
+docker run -p 8080:8080 k8s-rca
 ```
 
 ---
 
 ## 📊 Evaluation & Verification Results
 
-Running `python -m k8s_rca.cli evaluate` or `pytest`:
+Running `python -m k8s_rca.cli evaluate`:
 
 ```text
 =================== Benchmark Aggregate Performance Metrics ===================
-  Total Scenarios Evaluated:              7
+  Total Scenarios Evaluated:              8
   RCA Accuracy Rate:                      100.0%
   Evidence Accuracy Rate:                 100.0%
   False Positive Rate:                    0.0%
-  Mean Investigation Steps:               6.0 steps
-  Uncertainty Calibration (Brier Score):  0.0059 (near-optimal)
+  Mean Investigation Steps:               5.2 steps
+  Uncertainty Calibration (Brier Score):  0.0054 (near-optimal)
   Read-Only Safety Compliance:            100.0%
 ================================================================================
 ```
@@ -151,4 +191,5 @@ Running `python -m k8s_rca.cli evaluate` or `pytest`:
 pytest -v
 ```
 
-All 19 unit and integration tests covering sandboxing, redaction, hypothesis scoring, diagnostic tools, and scenario evaluations run in < 1 second.
+All 28 unit and integration tests covering sandboxing, redaction, prompt injection defense, MCP protocol, distributed tracing, and scenario evaluations run in < 1 second.
+

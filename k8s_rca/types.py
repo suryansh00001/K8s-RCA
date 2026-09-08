@@ -31,7 +31,32 @@ class EvidenceType(str, Enum):
     CHANGE = "change"
     DEPENDENCY = "dependency"
     NETWORK = "network"
+    TRACE = "trace"
 
+
+class Span(BaseModel):
+    span_id: str
+    trace_id: str
+    parent_span_id: Optional[str] = None
+    service_name: str
+    operation_name: str
+    start_time_offset_ms: float = 0.0
+    duration_ms: float
+    status_code: int = 200
+    error: bool = False
+    error_message: Optional[str] = None
+    tags: Dict[str, Any] = Field(default_factory=dict)
+
+
+class Trace(BaseModel):
+    trace_id: str
+    root_service: str
+    root_operation: str
+    total_duration_ms: float
+    status_code: int = 200
+    spans: List[Span] = Field(default_factory=list)
+    has_error: bool = False
+    error_summary: Optional[str] = None
 
 
 class HypothesisStatus(str, Enum):

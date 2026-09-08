@@ -20,6 +20,7 @@ def test_all_scenarios_registered():
     assert "sc-05-failed-deployment" in ids
     assert "sc-06-resource-throttling" in ids
     assert "sc-07-cascading-5xx" in ids
+    assert "sc-08-dependency-chain" in ids
 
 
 @pytest.mark.parametrize("scenario_id", [
@@ -30,6 +31,7 @@ def test_all_scenarios_registered():
     "sc-05-failed-deployment",
     "sc-06-resource-throttling",
     "sc-07-cascading-5xx",
+    "sc-08-dependency-chain",
 ])
 def test_agent_investigation_on_scenario(scenario_id):
     scenario = get_scenario(scenario_id)

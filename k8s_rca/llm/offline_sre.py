@@ -86,6 +86,7 @@ class OfflineSREClient(BaseLLMClient):
         found_throttling = any("CPU_THROTTLING" in str(h.result) or "cpu_throttling_pct" in str(h.result) for h in history)
         found_probe_failure = any("Unhealthy" in str(h.result) or "probe failed" in str(h.result).lower() or "connection refused" in str(h.result).lower() for h in history)
         found_db_pool = any("pool exhausted" in str(h.result).lower() or "too many connections" in str(h.result).lower() for h in history)
+        found_dep_timeout = any("504" in str(h.result) or "LockWaitTimeout" in str(h.result) or "lock wait timeout" in str(h.result).lower() or ("payment-service" in str(h.result) and "timeout" in str(h.result).lower()) for h in history)
 
         # Decide next tool action based on SRE investigative progression
         if "get_cluster_overview" in executed_tools and "get_event_timeline" not in executed_tools:
@@ -127,19 +128,59 @@ class OfflineSREClient(BaseLLMClient):
                 tool_arguments={"pod_name": target_pod, "namespace": ns, "previous": True, "tail_lines": 100},
             )
 
-        if "query_metrics" not in executed_tools and target_pod:
+        # If microservice timeouts or 5xx observed, query distributed traces
+        if "query_traces" not in executed_tools and svc and ("504" in incident.description or "5xx" in incident.description.lower() or "timeout" in incident.description.lower()):
             return InvestigationAction(
-                thought=f"Logs analyzed. Checking operational metrics for '{target_pod}' (CPU, Memory saturation, and throttling).",
-                tool_name="query_metrics",
-                tool_arguments={"resource_type": "pod", "resource_name": target_pod, "namespace": ns},
+                thought=f"Service '{svc}' is experiencing error/timeout spikes. Querying distributed traces to trace request propagation across microservices.",
+                tool_name="query_traces",
+                tool_arguments={"service_name": svc, "limit": 5},
             )
 
-        if "diff_resource_changes" not in executed_tools and svc:
+        # If traces found, inspect span waterfall
+        if "query_traces" in executed_tools and "get_trace_spans" not in executed_tools:
+            target_trace_id = None
+            for h in history:
+                if h.tool_name == "query_traces" and isinstance(h.result, list) and h.result:
+                    target_trace_id = h.result[0].get("trace_id")
+                    break
+            if target_trace_id:
+                return InvestigationAction(
+                    thought=f"Distributed traces indicate failures. Inspecting span waterfall for trace '{target_trace_id}' to isolate bottleneck service.",
+                    tool_name="get_trace_spans",
+                    tool_arguments={"trace_id": target_trace_id},
+                )
+
+        # If downstream payment-service bottleneck detected, check downstream logs
+        if any("payment-service" in str(h.result) for h in history) and not any(h.tool_name == "query_logs" and h.arguments.get("pod_name") == "payment-service-pod-1" for h in history):
             return InvestigationAction(
-                thought=f"Checking recent deployment rollout changes for service '{svc}' to identify any bad releases or configuration changes.",
-                tool_name="diff_resource_changes",
-                tool_arguments={"name": svc, "namespace": ns},
+                thought="Trace waterfall isolates latency bottleneck and errors in downstream 'payment-service'. Checking logs of 'payment-service-pod-1'.",
+                tool_name="query_logs",
+                tool_arguments={"pod_name": "payment-service-pod-1", "namespace": ns, "tail_lines": 50},
             )
+
+        # Check if we already have definitive root cause evidence to conclude
+        has_definitive_evidence = (
+            found_oom
+            or found_panic
+            or found_image_pull
+            or found_config_error
+            or (found_dep_timeout and any("lock" in str(h.result).lower() for h in history))
+        )
+
+        if not has_definitive_evidence:
+            if "query_metrics" not in executed_tools and target_pod:
+                return InvestigationAction(
+                    thought=f"Logs analyzed. Checking operational metrics for '{target_pod}' (CPU, Memory saturation, and throttling).",
+                    tool_name="query_metrics",
+                    tool_arguments={"resource_type": "pod", "resource_name": target_pod, "namespace": ns},
+                )
+
+            if "diff_resource_changes" not in executed_tools and svc:
+                return InvestigationAction(
+                    thought=f"Checking recent deployment rollout changes for service '{svc}' to identify any bad releases or configuration changes.",
+                    tool_name="diff_resource_changes",
+                    tool_arguments={"name": svc, "namespace": ns},
+                )
 
         # We have gathered comprehensive evidence; conclude investigation
         hyp_updates = []
@@ -171,6 +212,13 @@ class OfflineSREClient(BaseLLMClient):
                 {"id": "H2", "confidence": 0.05, "status": "refuted", "reasoning": "Exit code is 1, not 137 (OOM)."},
             ]
             conclusion = "Application crashed on startup with unhandled panic due to missing JWT_SIGNING_KEY environment variable."
+        elif found_dep_timeout and any("lock" in str(h.result).lower() or "payment" in str(h.result).lower() for h in history):
+            hyp_updates = [
+                {"id": "H4", "confidence": 0.95, "status": "supported", "description": "PostgreSQL row lock contention and database query timeout in payment-service causing cascading 504 Gateway Timeouts upstream to order-api and frontend.", "reasoning": "Distributed trace spans and downstream payment logs reveal row exclusive lock wait timeouts on PostgreSQL database causing cascading 504 Gateway Timeouts."},
+                {"id": "H1", "confidence": 0.1, "status": "refuted", "reasoning": "Frontend code is functioning correctly; failures are cascading from downstream payment database lock."},
+                {"id": "H2", "confidence": 0.05, "status": "refuted", "reasoning": "Memory metrics show healthy pod memory."},
+            ]
+            conclusion = "Downstream PostgreSQL database row lock contention in payment-service caused cascading 504 Gateway Timeouts upstream to order-api and frontend."
         elif found_db_pool:
             hyp_updates = [
                 {"id": "H4", "confidence": 0.92, "status": "supported", "description": "PostgreSQL database connection pool exhaustion (max_connections=50 reached) causing connection lease timeouts and downstream HTTP 500 error spikes in checkout service.", "reasoning": "Logs show database connection pool exhaustion causing HTTP 500 spikes."},

@@ -19,6 +19,7 @@ from ..tools.resource_inspector import ResourceInspector
 from ..tools.log_analyzer import LogAnalyzer
 from ..tools.metrics_analyzer import MetricsAnalyzer
 from ..tools.change_correlator import ChangeCorrelator
+from ..tools.trace_analyzer import TraceAnalyzer
 from ..llm.base import BaseLLMClient
 from ..llm.offline_sre import OfflineSREClient
 from .hypothesis import HypothesisManager
@@ -57,6 +58,7 @@ class SREInvestigationAgent:
         self.tool_registry.register_instance(LogAnalyzer(self.provider))
         self.tool_registry.register_instance(MetricsAnalyzer(self.provider))
         self.tool_registry.register_instance(ChangeCorrelator(self.provider))
+        self.tool_registry.register_instance(TraceAnalyzer(self.provider))
 
     def investigate(self, incident: Incident) -> RCAReport:
         """
@@ -162,6 +164,9 @@ class SREInvestigationAgent:
         elif tool_name in ("diff_resource_changes",):
             ev_type = EvidenceType.CHANGE
             desc = f"Rollout revision history for {source}"
+        elif tool_name in ("query_traces", "get_trace_spans", "analyze_service_dependencies"):
+            ev_type = EvidenceType.TRACE
+            desc = f"Distributed trace analysis for {source}"
 
         ev = Evidence(
             id=ev_id,

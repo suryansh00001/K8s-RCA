@@ -1,8 +1,5 @@
-"""
-Security boundary enforcing read-only cluster access and tool constraints.
-"""
-
-from typing import Any, Dict, Optional, Set
+import re
+from typing import Any, Dict, List, Optional, Set, Tuple
 from ..config import SandboxConfig, DEFAULT_CONFIG
 
 
@@ -13,9 +10,21 @@ class SecurityViolationError(Exception):
 
 class SandboxBoundary:
     """
-    Enforces strict read-only guarantees on all agent operations.
+    Enforces strict read-only guarantees and prompt injection defenses on all agent operations.
     Acts as an inviolable proxy between the AI agent and the Kubernetes cluster.
     """
+
+    ADVERSARIAL_INJECTION_PATTERNS = [
+        re.compile(r"ignore\s+(all\s+)?(previous|prior|above)\s+instructions?", re.IGNORECASE),
+        re.compile(r"system\s*prompt\s*(override|reset|injection)", re.IGNORECASE),
+        re.compile(r"you\s+are\s+now\s+in\s+developer\s+mode", re.IGNORECASE),
+        re.compile(r"disregard\s+(all\s+)?safety\s+(guidelines|filters|boundaries)", re.IGNORECASE),
+        re.compile(r"run\s+this\s+command\s+on\s+the\s+cluster", re.IGNORECASE),
+        re.compile(r"execute\s+(the\s+following\s+)?command", re.IGNORECASE),
+        re.compile(r"kubectl\s+(delete|apply|patch|create|exec|scale|drain|cordon)", re.IGNORECASE),
+        re.compile(r"rm\s+-rf\s+[/~]", re.IGNORECASE),
+        re.compile(r"drop\s+database\s+[a-z0-9_]+", re.IGNORECASE),
+    ]
 
     def __init__(self, config: Optional[SandboxConfig] = None):
         self.config = config or DEFAULT_CONFIG.sandbox
@@ -67,3 +76,41 @@ class SandboxBoundary:
                     )
             sanitized[key] = value
         return sanitized
+
+    def detect_prompt_injection(self, text: str) -> Tuple[bool, List[str]]:
+        """
+        Scan incoming telemetry (logs, events, traces, manifests) for adversarial prompt injection triggers.
+        """
+        if not text or not isinstance(text, str):
+            return False, []
+        detected_patterns = []
+        for pattern in self.ADVERSARIAL_INJECTION_PATTERNS:
+            matches = pattern.findall(text)
+            if matches:
+                detected_patterns.append(pattern.pattern)
+        return len(detected_patterns) > 0, detected_patterns
+
+    def sanitize_untrusted_telemetry(self, data: Any, fence: bool = True) -> Any:
+        """
+        Neutralizes adversarial instructions embedded in observability telemetry
+        and optionally encloses telemetry in strict untrusted data fences.
+        """
+        if isinstance(data, str):
+            is_injected, _ = self.detect_prompt_injection(data)
+            sanitized_text = data
+            if is_injected:
+                for pattern in self.ADVERSARIAL_INJECTION_PATTERNS:
+                    sanitized_text = pattern.sub("[INJECTION_ATTEMPT_NEUTRALIZED]", sanitized_text)
+                sanitized_text = (
+                    f"[SECURITY NOTICE: Adversarial prompt injection attempt detected and neutralized in untrusted telemetry]\n"
+                    + sanitized_text
+                )
+            if fence and not sanitized_text.startswith("<UNTRUSTED_TELEMETRY_DATA"):
+                return f"<UNTRUSTED_TELEMETRY_DATA source='cluster_observability'>\n{sanitized_text}\n</UNTRUSTED_TELEMETRY_DATA>"
+            return sanitized_text
+        elif isinstance(data, dict):
+            return {k: self.sanitize_untrusted_telemetry(v, fence=False) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self.sanitize_untrusted_telemetry(item, fence=False) for item in data]
+        return data
+

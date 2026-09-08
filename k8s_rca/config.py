@@ -50,7 +50,7 @@ class SandboxConfig(BaseModel):
 
 
 class InvestigationConfig(BaseModel):
-    max_iterations: int = 8
+    max_iterations: int = 10
     confidence_termination_threshold: float = 0.85
     min_confidence_diff_to_terminate: float = 0.30  # Gap between top hypothesis and #2
     enable_timeline_correlation: bool = True

@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  k8s-rca-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: k8s-rca-agent
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Optional: set API keys if using Cloud LLM instead of offline SRE engine
+      # - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+    command: ["serve", "--port", "8080"]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    tmpfs:
+      - /tmp

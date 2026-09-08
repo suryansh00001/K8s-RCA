@@ -20,6 +20,7 @@ class SimulatedClusterProvider(BaseClusterProvider):
         self.metrics: Dict[str, Dict[str, Any]] = {}
         self.events: List[Dict[str, Any]] = []
         self.rollouts: Dict[str, List[Dict[str, Any]]] = {}
+        self.traces: List[Dict[str, Any]] = []
 
     def _res_key(self, kind: str, name: str, namespace: str = "default") -> str:
         return f"{kind.lower()}/{namespace}/{name}"
@@ -105,6 +106,30 @@ class SimulatedClusterProvider(BaseClusterProvider):
             "change_cause": change_cause,
             "diff_summary": diff_summary,
             "applied_at": (applied_at or datetime.utcnow()).isoformat(),
+        })
+
+    def add_trace(
+        self,
+        trace_id: str,
+        root_service: str,
+        root_operation: str,
+        total_duration_ms: float,
+        status_code: int = 200,
+        spans: Optional[List[Dict[str, Any]]] = None,
+        has_error: bool = False,
+        error_summary: Optional[str] = None,
+    ) -> None:
+        """Seed a distributed trace with span waterfall."""
+        self.traces.append({
+            "trace_id": trace_id,
+            "root_service": root_service,
+            "root_operation": root_operation,
+            "total_duration_ms": total_duration_ms,
+            "status_code": status_code,
+            "has_error": has_error or (status_code >= 400),
+            "error_summary": error_summary,
+            "spans": spans or [],
+            "timestamp": datetime.utcnow().isoformat(),
         })
 
     # --- BaseClusterProvider Implementation ---
@@ -285,3 +310,30 @@ class SimulatedClusterProvider(BaseClusterProvider):
         """Fetch rollout revisions."""
         key = self._res_key(kind, name, namespace)
         return self.rollouts.get(key, [])
+
+    def get_traces(
+        self,
+        service_name: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        min_duration_ms: Optional[float] = None,
+        status_code: Optional[int] = None,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        """Fetch distributed traces matching optional filters."""
+        results = []
+        for t in self.traces:
+            if trace_id and t.get("trace_id") != trace_id:
+                continue
+            if min_duration_ms and t.get("total_duration_ms", 0) < min_duration_ms:
+                continue
+            if status_code and t.get("status_code") != status_code:
+                continue
+            if service_name:
+                # Matches either root service or any span service
+                services = {t.get("root_service")} | {s.get("service_name") for s in t.get("spans", [])}
+                if service_name not in services:
+                    continue
+            results.append(t)
+            if len(results) >= limit:
+                break
+        return results

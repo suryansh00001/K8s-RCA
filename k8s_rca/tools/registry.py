@@ -116,9 +116,12 @@ class ToolRegistry:
 
             # 4. Apply token budget summarization if the result is text/logs
             if isinstance(redacted_result, str):
-                final_result = self.budget_manager.summarize_logs(redacted_result)
+                summarized_result = self.budget_manager.summarize_logs(redacted_result)
             else:
-                final_result = redacted_result
+                summarized_result = redacted_result
+
+            # 5. Sanitize untrusted telemetry and neutralize prompt injection attempts
+            final_result = self.boundary.sanitize_untrusted_telemetry(summarized_result)
 
             duration = (time.perf_counter() - start_time) * 1000.0
 

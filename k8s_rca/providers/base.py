@@ -75,3 +75,15 @@ class BaseClusterProvider(ABC):
     ) -> List[Dict[str, Any]]:
         """Fetch rollout revisions, manifest diffs, and change history."""
         pass
+
+    @abstractmethod
+    def get_traces(
+        self,
+        service_name: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        min_duration_ms: Optional[float] = None,
+        status_code: Optional[int] = None,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        """Fetch distributed traces and spans (Jaeger / OpenTelemetry / simulated)."""
+        pass

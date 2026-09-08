@@ -258,3 +258,17 @@ class LiveK8sClusterProvider(BaseClusterProvider):
                     "replicas": rs.status.replicas,
                 })
         return revisions
+
+    def get_traces(
+        self,
+        service_name: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        min_duration_ms: Optional[float] = None,
+        status_code: Optional[int] = None,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        """Fetch traces from in-cluster Jaeger/OpenTelemetry collector or fallback if not installed."""
+        self._ensure_client()
+        self.boundary.validate_action("get", "traces")
+        # Read-only attempt to query Jaeger HTTP service if configured, or return empty list
+        return []
