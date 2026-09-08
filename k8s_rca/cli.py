@@ -125,10 +125,10 @@ def cmd_run_scenario(args) -> None:
     # Select LLM backend
     if args.llm == "gemini":
         console.print(f"[bold cyan]Backend:[/bold cyan] Google Gemini ({args.model})")
-        llm = GeminiClient(model_name=args.model)
+        llm = GeminiClient(api_key=getattr(args, "api_key", None), model_name=args.model)
     elif args.llm == "openai":
         console.print(f"[bold cyan]Backend:[/bold cyan] OpenAI / Compatible ({args.model})")
-        llm = OpenAICompatClient(model_name=args.model, base_url=args.base_url)
+        llm = OpenAICompatClient(api_key=getattr(args, "api_key", None), model_name=args.model, base_url=args.base_url)
     elif args.llm == "ollama":
         target_model = args.model if args.model != "gemini-2.5-flash" else "llama3.1"
         target_url = args.base_url or "http://localhost:11434/v1"
@@ -151,10 +151,10 @@ def cmd_evaluate(args) -> None:
 
     if args.llm == "gemini":
         console.print(f"[bold cyan]Evaluation Brain:[/bold cyan] Google Gemini ({args.model})")
-        llm = GeminiClient(model_name=args.model)
+        llm = GeminiClient(api_key=getattr(args, "api_key", None), model_name=args.model)
     elif args.llm == "openai":
         console.print(f"[bold cyan]Evaluation Brain:[/bold cyan] OpenAI / Compatible ({args.model})")
-        llm = OpenAICompatClient(model_name=args.model, base_url=args.base_url)
+        llm = OpenAICompatClient(api_key=getattr(args, "api_key", None), model_name=args.model, base_url=args.base_url)
     elif args.llm == "ollama":
         target_model = args.model if args.model != "gemini-2.5-flash" else "llama3.1"
         target_url = args.base_url or "http://localhost:11434/v1"
@@ -217,9 +217,9 @@ def cmd_investigate_live(args) -> None:
     )
 
     if args.llm == "gemini":
-        llm = GeminiClient(model_name=args.model)
+        llm = GeminiClient(api_key=getattr(args, "api_key", None), model_name=args.model)
     elif args.llm == "openai":
-        llm = OpenAICompatClient(model_name=args.model, base_url=args.base_url)
+        llm = OpenAICompatClient(api_key=getattr(args, "api_key", None), model_name=args.model, base_url=args.base_url)
     elif args.llm == "ollama":
         target_model = args.model if args.model != "gemini-2.5-flash" else "llama3.1"
         target_url = args.base_url or "http://localhost:11434/v1"
@@ -355,12 +355,14 @@ def main() -> None:
     run_parser.add_argument("--scenario", "-s", required=True, help="Scenario ID (e.g., sc-07-cascading-5xx or cascading_5xx)")
     run_parser.add_argument("--llm", choices=["offline", "gemini", "openai", "ollama"], default="offline", help="Reasoning backend: 'gemini' (Cloud AI), 'openai' (Cloud AI), 'ollama' (Local free neural net), 'offline' (Deterministic heuristic baseline)")
     run_parser.add_argument("--model", default="gemini-2.5-flash", help="Model name (e.g. gemini-2.5-flash, gpt-4o, or llama3.1 for ollama)")
+    run_parser.add_argument("--api-key", help="API key for Gemini or OpenAI (optional if environment variable is set)")
     run_parser.add_argument("--base-url", help="Custom OpenAI / Ollama base URL (default: http://localhost:11434/v1 for ollama)")
 
     # evaluate
     eval_parser = subparsers.add_parser("evaluate", help="Run full benchmark evaluation across all scenarios")
     eval_parser.add_argument("--llm", choices=["offline", "gemini", "openai", "ollama"], default="offline", help="Reasoning backend to evaluate")
     eval_parser.add_argument("--model", default="gemini-2.5-flash", help="Model name if using cloud or local LLM")
+    eval_parser.add_argument("--api-key", help="API key for Gemini or OpenAI")
     eval_parser.add_argument("--base-url", help="Custom base URL for OpenAI/Ollama")
 
     # live investigate
@@ -372,6 +374,7 @@ def main() -> None:
     live_parser.add_argument("--context", help="Kubeconfig context")
     live_parser.add_argument("--llm", choices=["offline", "gemini", "openai", "ollama"], default="offline", help="Reasoning backend")
     live_parser.add_argument("--model", default="gemini-2.5-flash", help="Model name")
+    live_parser.add_argument("--api-key", help="API key for Gemini or OpenAI")
     live_parser.add_argument("--base-url", help="Custom base URL for OpenAI/Ollama")
 
     args = parser.parse_args()

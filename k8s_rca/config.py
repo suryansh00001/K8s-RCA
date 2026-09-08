@@ -1,9 +1,31 @@
-"""
-Configuration and settings for k8s_rca.
-"""
-
+import os
+from pathlib import Path
 from typing import List, Set
 from pydantic import BaseModel, Field
+
+
+def _load_env() -> None:
+    """Auto-load key-value pairs from .env file into os.environ if present."""
+    candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parent.parent / ".env",
+    ]
+    for env_path in candidates:
+        if env_path.is_file():
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip().strip("'\"")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
+
+_load_env()
 
 
 class SandboxConfig(BaseModel):

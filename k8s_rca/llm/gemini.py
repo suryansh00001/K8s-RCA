@@ -54,6 +54,14 @@ class GeminiClient(BaseLLMClient):
                 "max_iterations": max_iterations,
                 "hypotheses": [h.model_dump(mode="json") for h in hypotheses],
                 "evidence_vault": [e.model_dump(mode="json") for e in evidence_list],
+                "available_tools": [
+                    {
+                        "name": t["function"]["name"],
+                        "description": t["function"]["description"],
+                        "parameters": t["function"]["parameters"],
+                    }
+                    for t in tool_schemas
+                ],
                 "investigation_history": [
                     {
                         "tool": h.tool_name,
