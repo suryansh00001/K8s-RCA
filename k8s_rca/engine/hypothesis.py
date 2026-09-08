@@ -82,7 +82,7 @@ class HypothesisManager:
     def apply_update(self, update_dict: Dict[str, Any], iteration: int = 0) -> None:
         """Apply updates from LLM / agent decision."""
         action = update_dict.get("action", "update")
-        hid = update_dict.get("id")
+        hid = update_dict.get("id") or update_dict.get("hypothesis_id")
 
         if not hid:
             return
