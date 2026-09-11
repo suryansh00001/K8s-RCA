@@ -26,9 +26,18 @@ class RCAApiHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=STATIC_DIR, **kwargs)
 
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.end_headers()
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == "/api/scenarios":
+        if parsed.path == "/api/health":
+            self._send_json({"status": "ok", "agent": "K8s-RCA Autonomous SRE Agent", "version": "1.0.0"})
+        elif parsed.path == "/api/scenarios":
             self._send_json([
                 {
                     "id": s.id,
@@ -41,11 +50,33 @@ class RCAApiHandler(http.server.SimpleHTTPRequestHandler):
                 for s in get_all_scenarios()
             ])
         elif parsed.path == "/api/evaluate":
-            runner = BenchmarkRunner(llm_client=OfflineSREClient())
-            metrics = runner.run_all()
-            self._send_json(metrics.model_dump(mode="json"))
+            try:
+                runner = BenchmarkRunner(llm_client=OfflineSREClient())
+                metrics = runner.run_all()
+                self._send_json(metrics.model_dump(mode="json"))
+            except Exception as e:
+                self._send_json({"error": f"Evaluation failure: {str(e)}"}, status=500)
         else:
             super().do_GET()
+
+    def _resolve_llm_client(self, payload: Dict[str, Any]):
+        llm_type = payload.get("llm", "offline")
+        api_key = payload.get("api_key")
+        model = payload.get("model")
+        base_url = payload.get("base_url")
+
+        if llm_type == "gemini":
+            return GeminiClient(api_key=api_key, model_name=model or "gemini-2.5-flash")
+        elif llm_type == "openai":
+            return OpenAICompatClient(api_key=api_key, model_name=model or "gpt-4o", base_url=base_url)
+        elif llm_type == "ollama":
+            return OpenAICompatClient(
+                api_key="ollama",
+                model_name=model or "llama3.1",
+                base_url=base_url or "http://localhost:11434/v1",
+            )
+        else:
+            return OfflineSREClient()
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -63,39 +94,35 @@ class RCAApiHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"error": f"Scenario '{scenario_id}' not found"}, status=404)
                 return
 
-            llm_type = payload.get("llm", "offline")
-            if llm_type == "gemini":
-                llm = GeminiClient(api_key=payload.get("api_key"))
-            elif llm_type == "openai":
-                llm = OpenAICompatClient(api_key=payload.get("api_key"))
-            else:
-                llm = OfflineSREClient()
-
-            sim_cluster = scenario.build_cluster()
-            agent = SREInvestigationAgent(provider=sim_cluster, llm_client=llm)
-            report = agent.investigate(scenario.incident)
-
-            self._send_json(report.model_dump(mode="json"))
+            try:
+                llm = self._resolve_llm_client(payload)
+                sim_cluster = scenario.build_cluster()
+                agent = SREInvestigationAgent(provider=sim_cluster, llm_client=llm)
+                report = agent.investigate(scenario.incident)
+                self._send_json(report.model_dump(mode="json"))
+            except Exception as e:
+                self._send_json({"error": f"Investigation failed: {str(e)}"}, status=500)
 
         elif parsed.path == "/api/investigate-live":
             query = payload.get("query", "Investigate service degradation")
             namespace = payload.get("namespace", "default")
             service = payload.get("service")
+            kubeconfig = payload.get("kubeconfig")
             
             try:
-                provider = LiveK8sClusterProvider(kubeconfig_path=payload.get("kubeconfig"))
+                provider = LiveK8sClusterProvider(kubeconfig_path=kubeconfig)
                 incident = Incident(title=query, description=query, namespace=namespace, affected_service=service)
-                llm = OfflineSREClient()
+                llm = self._resolve_llm_client(payload)
                 agent = SREInvestigationAgent(provider=provider, llm_client=llm)
                 report = agent.investigate(incident)
                 self._send_json(report.model_dump(mode="json"))
             except Exception as e:
-                self._send_json({"error": str(e)}, status=500)
+                self._send_json({"error": f"Live cluster investigation failed: {str(e)}"}, status=500)
         else:
             self._send_json({"error": "Endpoint not found"}, status=404)
 
     def _send_json(self, data: Any, status: int = 200) -> None:
-        raw = json.dumps(data).encode("utf-8")
+        raw = json.dumps(data, default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(raw)))
