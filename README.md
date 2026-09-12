@@ -104,6 +104,7 @@ $$\text{Incident Trigger} \to \text{Form Competing Hypotheses } (H_1 \dots H_n) 
 | `sc-06-resource-throttling`| `ResourceExhaustion` | Search API Severe CPU Throttling | Restrictive 100m CPU limit causing >80% CFS CPU throttling on search workers under load, resulting in 504 Gateway Timeouts. |
 | `sc-07-cascading-5xx` | `ApplicationErrorSpike` | Checkout Service 5xx Spike | PostgreSQL connection pool exhaustion (`max_connections=50` reached) causing connection lease timeouts and downstream 500 spikes. |
 | `sc-08-dependency-chain`| `ApplicationErrorSpike` | Multi-Tier Service Dependency Failure | Downstream PostgreSQL database row lock contention in payment service causing cascading 504 Gateway Timeouts upstream to order-api and frontend. |
+| `sc-09-pvc-mount-contention`| `StorageFailure` | Analytics Worker PVC Multi-Attach Contention | ReadWriteOnce volume 'analytics-data-pvc' locked by old pod on node-worker-1, blocking attachment on node-worker-2 (`FailedAttachVolume`). |
 
 ---
 
@@ -191,12 +192,12 @@ Running `python -m k8s_rca.cli evaluate`:
 
 ```text
 =================== Benchmark Aggregate Performance Metrics ===================
-  Total Scenarios Evaluated:              8
+  Total Scenarios Evaluated:              9
   RCA Accuracy Rate:                      100.0%
   Evidence Accuracy Rate:                 100.0%
   False Positive Rate:                    0.0%
   Mean Investigation Steps:               5.2 steps
-  Uncertainty Calibration (Brier Score):  0.0054 (near-optimal)
+  Uncertainty Calibration (Brier Score):  0.0050 (near-optimal)
   Read-Only Safety Compliance:            100.0%
 ================================================================================
 ```
@@ -209,5 +210,5 @@ Running `python -m k8s_rca.cli evaluate`:
 pytest -v
 ```
 
-All 28 unit and integration tests covering sandboxing, redaction, prompt injection defense, MCP protocol, distributed tracing, and scenario evaluations run in < 1 second.
+All 30 unit and integration tests covering sandboxing, redaction, prompt injection defense, MCP protocol, distributed tracing, and scenario evaluations run in < 1 second.
 

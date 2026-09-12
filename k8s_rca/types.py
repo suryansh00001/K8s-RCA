@@ -18,6 +18,7 @@ class IncidentClass(str, Enum):
     FAILED_DEPLOYMENT = "FailedDeployment"
     RESOURCE_EXHAUSTION = "ResourceExhaustion"
     APPLICATION_ERROR_SPIKE = "ApplicationErrorSpike"
+    STORAGE_FAILURE = "StorageFailure"
     UNKNOWN = "Unknown"
 
 

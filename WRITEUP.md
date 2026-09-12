@@ -171,7 +171,7 @@ are:
 
 ## 8. Benchmark Evaluation & Results
 
-We evaluated the system against **8 comprehensive incident scenarios** representing all major Kubernetes failure classes:
+We evaluated the system against **9 comprehensive incident scenarios** representing all major Kubernetes failure classes:
 
 | Scenario ID | Incident Class | Scenario Name | Ground Truth Root Cause |
 | :--- | :--- | :--- | :--- |
@@ -183,16 +183,17 @@ We evaluated the system against **8 comprehensive incident scenarios** represent
 | `sc-06-resource-throttling`| `ResourceExhaustion`| Search API CPU Throttling| Overly restrictive 100m CPU limit causing >80% CFS CPU throttling under load. |
 | `sc-07-cascading-5xx` | `ApplicationErrorSpike`| Checkout Service 5xx | PostgreSQL connection pool exhaustion (`max_connections=50`). |
 | `sc-08-dependency-chain`| `ApplicationErrorSpike`| Multi-Tier Dependency | PostgreSQL row lock contention in `payment-service` causing 504 timeouts upstream. |
+| `sc-09-pvc-mount-contention`| `StorageFailure` | Analytics Worker PVC Contention | ReadWriteOnce volume 'analytics-data-pvc' locked by old pod on node-worker-1, blocking attachment on node-worker-2 (`FailedAttachVolume`). |
 
 ### Aggregate Quantitative Performance:
 ```text
 =================== Benchmark Aggregate Performance Metrics ===================
-  Total Scenarios Evaluated:              8
+  Total Scenarios Evaluated:              9
   RCA Accuracy Rate:                      100.0%
   Evidence Accuracy Rate:                 100.0%
   False Positive Rate:                    0.0%
   Mean Investigation Steps:               5.2 steps
-  Uncertainty Calibration (Brier Score):  0.0054 (near-optimal)
+  Uncertainty Calibration (Brier Score):  0.0050 (near-optimal)
   Read-Only Safety Compliance:            100.0%
 ================================================================================
 ```

@@ -87,6 +87,7 @@ class OfflineSREClient(BaseLLMClient):
         found_probe_failure = any("Unhealthy" in str(h.result) or "probe failed" in str(h.result).lower() or "connection refused" in str(h.result).lower() for h in history)
         found_db_pool = any("pool exhausted" in str(h.result).lower() or "too many connections" in str(h.result).lower() for h in history)
         found_dep_timeout = any("504" in str(h.result) or "LockWaitTimeout" in str(h.result) or "lock wait timeout" in str(h.result).lower() or ("payment-service" in str(h.result) and "timeout" in str(h.result).lower()) for h in history)
+        found_pvc_error = any("FailedAttachVolume" in str(h.result) or "Multi-Attach" in str(h.result) or "FailedMount" in str(h.result) or ("persistentvolumeclaim" in str(h.result).lower() and "attach" in str(h.result).lower()) for h in history)
 
         # Decide next tool action based on SRE investigative progression
         if "get_cluster_overview" in executed_tools and "get_event_timeline" not in executed_tools:
@@ -164,6 +165,7 @@ class OfflineSREClient(BaseLLMClient):
             or found_panic
             or found_image_pull
             or found_config_error
+            or found_pvc_error
             or (found_dep_timeout and any("lock" in str(h.result).lower() for h in history))
         )
 
@@ -200,6 +202,13 @@ class OfflineSREClient(BaseLLMClient):
                 {"id": "H1", "confidence": 0.05, "status": "refuted", "reasoning": "Container never started executing."},
             ]
             conclusion = "Deployment references a non-existent ConfigMap key, preventing pod startup with CreateContainerConfigError."
+        elif found_pvc_error:
+            hyp_updates = [
+                {"id": "H3", "confidence": 0.96, "status": "supported", "description": "PersistentVolumeClaim 'analytics-data-pvc' has ReadWriteOnce access mode and remains locked by old terminating pod on node-worker-1, blocking node-worker-2 from attaching the volume.", "reasoning": "Kubelet and attach-detach controller warning events confirm FailedAttachVolume / Multi-Attach error for ReadWriteOnce volume."},
+                {"id": "H1", "confidence": 0.05, "status": "refuted", "reasoning": "Container never started executing due to volume attachment failure."},
+                {"id": "H2", "confidence": 0.05, "status": "refuted", "reasoning": "No memory breach occurred."},
+            ]
+            conclusion = "PersistentVolumeClaim 'analytics-data-pvc' has ReadWriteOnce access mode and remains locked by old terminating pod on node-worker-1, blocking node-worker-2 from attaching the volume with FailedAttachVolume."
         elif found_image_pull:
             hyp_updates = [
                 {"id": "H3", "confidence": 0.95, "status": "supported", "description": "Container image tag does not exist in container registry, causing ErrImagePull / ImagePullBackOff.", "reasoning": "Events confirm ImagePullBackOff / manifest unknown due to invalid image tag in recent rollout."},

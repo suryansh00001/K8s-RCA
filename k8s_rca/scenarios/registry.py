@@ -12,6 +12,7 @@ from .failed_deployment import FailedDeploymentScenario
 from .resource_throttling import ResourceThrottlingScenario
 from .cascading_5xx import Cascading5xxScenario
 from .dependency_chain import DependencyChainScenario
+from .pvc_mount_contention import PVCMountContentionScenario
 
 
 class ScenarioRegistry:
@@ -31,6 +32,7 @@ class ScenarioRegistry:
             ResourceThrottlingScenario(),
             Cascading5xxScenario(),
             DependencyChainScenario(),
+            PVCMountContentionScenario(),
         ]
         for s in defaults:
             self._scenarios[s.id] = s

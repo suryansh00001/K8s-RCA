@@ -11,8 +11,8 @@ def test_benchmark_runner_aggregates_metrics():
     runner = BenchmarkRunner(llm_client=OfflineSREClient())
     metrics = runner.run_all()
 
-    assert metrics.total_scenarios == 8
-    assert metrics.correct_scenarios == 8
+    assert metrics.total_scenarios == 9
+    assert metrics.correct_scenarios == 9
     assert metrics.rca_accuracy_pct == 100.0
     assert metrics.false_positive_rate_pct == 0.0
     assert metrics.evidence_accuracy_pct >= 90.0
