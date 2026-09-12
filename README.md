@@ -165,6 +165,24 @@ docker build -t k8s-rca .
 docker run -p 8080:8080 k8s-rca
 ```
 
+### 9. Deploy Alerting Tool via Helm & Autonomous Webhook Ingestion
+Deploy **Prometheus Alertmanager** into your cluster using Helm, pre-configured to route firing alerts directly to the K8s-RCA agent webhook:
+
+```bash
+# 1. Add Prometheus Community Helm Repository
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+# 2. Deploy Alertmanager into monitoring namespace
+helm install alertmanager prometheus-community/alertmanager -n monitoring --create-namespace -f k8s/alertmanager-values.yaml
+
+# 3. Verify Alertmanager pod is Running
+kubectl get pods -n monitoring
+
+# 4. Webhook Receiver is active at /api/webhook/alertmanager
+# Any firing alert triggers an autonomous live investigation and stores the RCA report in /api/reports.
+```
+
 ---
 
 ## 📊 Evaluation & Verification Results

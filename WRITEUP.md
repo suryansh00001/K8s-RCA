@@ -199,7 +199,60 @@ We evaluated the system against **8 comprehensive incident scenarios** represent
 
 ---
 
-## 9. Known Limitations & Interesting Failures
+## 9. Live Cluster Integration & Helm-Managed Alerting Pipeline
+
+To bridge the gap between offline benchmark simulations and production Kubernetes environments, we integrated a full end-to-end **Alert-to-RCA reactive pipeline** running against a live Kubernetes cluster:
+
+```
+[Live K8s Cluster]
+       │
+       ▼
+[Prometheus Alertmanager] (Deployed via Helm in `monitoring` namespace)
+       │
+       │ HTTP POST (Webhook Payload: labels, annotations, severity)
+       ▼
+[K8s-RCA Webhook Ingestion Engine] (`/api/webhook/alertmanager`)
+       │
+       │ Automatic alert parsing & incident metadata extraction
+       ▼
+[Hypothesis Generator & Bayesian Engine]
+       │
+       │ Iterative read-only diagnostic queries
+       ▼
+[Official Kubernetes Python Client (`CoreV1Api`, `AppsV1Api`)]
+       │
+       ├── Live Pod Lifecycle & Container Status
+       ├── Live Pod Stdout/Stderr & Crash Logs (`read_namespaced_pod_log`)
+       └── Live Namespace Events & Rollout History
+              │
+              ▼
+[Causal Propagation Graph & Grounded RCA Report]
+       │
+       ▼
+[Persistence in `/api/reports` & Real-Time Dashboard UI]
+```
+
+### 1. Helm Package Management for Observability:
+We package and deploy **Prometheus Alertmanager** into the cluster using Helm:
+* **Chart**: `prometheus-community/alertmanager`
+* **Custom Values Manifest** ([`k8s/alertmanager-values.yaml`](file:///d:/k8s%20RCA/k8s/alertmanager-values.yaml)):
+  * Ephemeral storage profile optimized for local development and rapid bootstrapping.
+  * Custom routing tree grouping alerts by `[alertname, namespace, pod, service]`.
+  * Dedicated webhook receiver `rca-agent` dispatching firing alerts directly to `http://host.docker.internal:8081/api/webhook/alertmanager`.
+
+### 2. Autonomous Alert Ingestion & Verification:
+When Alertmanager fires an alert (e.g. `GoodocServerRestarting` or `KubePodCrashLooping`):
+1. The agent server's `/api/webhook/alertmanager` parses the firing payload.
+2. An `Incident` context is spawned with target namespace, affected service, and pod labels.
+3. The agent connects to the live cluster via [`LiveK8sClusterProvider`](file:///d:/k8s%20RCA/k8s_rca/providers/live_k8s.py) using the official `kubernetes` client (`v36.0.3`).
+4. In our live test run, the agent diagnosed a real database schema migration connection timeout in `goodoc-server-687f4d654b-dtjt9`:
+   * Extracted actual termination exit code (`Exit Code 1`).
+   * Fetched crash logs showing: `[PostgreSQL Error] Connection terminated due to connection timeout`.
+   * Reconstructed a 3-step causal propagation graph and saved the report to `/api/reports` with 70.0% confidence.
+
+---
+
+## 10. Known Limitations & Interesting Failures
 
 1. **Cascading Symptom Masking Root Cause**: In multi-tier microservice architectures (e.g. `sc-08`), upstream symptoms (Frontend 504s, readiness probe failures) can initially deceive an agent into blaming the frontend. Only by tracing distributed spans downstream to the payment service and database row lock contention could the actual root cause be isolated.
 2. **High-Volume Log Truncation**: When applications spew megabytes of stack traces per second, fixed-size buffers can push out the original root cause log line. Our token budgeter prioritizes lines matching fatal panic / OOM signatures over generic info logs to solve this.
@@ -207,7 +260,7 @@ We evaluated the system against **8 comprehensive incident scenarios** represent
 
 ---
 
-## 10. What We Would Build Next
+## 11. What We Would Build Next
 
 1. **Active eBPF Telemetry Ingestion**: Hooking Linux kernel tracepoints via eBPF (BCC / Cilium Tetragon) to inspect socket connection drops, TCP retransmissions, and DNS resolution failures directly at the kernel boundary without application instrumentation.
 2. **Automated Safe Remediation Proposals & Canary Verification**: Generate Kubernetes patch manifests (e.g., resource limit bumps, ConfigMap fixes) and execute canary rollbacks in a staging namespace with automated rollback triggers.

@@ -22,6 +22,9 @@ from ..providers.live_k8s import LiveK8sClusterProvider
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
+STORED_REPORTS = []
+
+
 class RCAApiHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=STATIC_DIR, **kwargs)
@@ -37,6 +40,8 @@ class RCAApiHandler(http.server.SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/health":
             self._send_json({"status": "ok", "agent": "K8s-RCA Autonomous SRE Agent", "version": "1.0.0"})
+        elif parsed.path == "/api/reports":
+            self._send_json(STORED_REPORTS)
         elif parsed.path == "/api/scenarios":
             self._send_json([
                 {
@@ -60,8 +65,17 @@ class RCAApiHandler(http.server.SimpleHTTPRequestHandler):
             super().do_GET()
 
     def _resolve_llm_client(self, payload: Dict[str, Any]):
-        llm_type = payload.get("llm", "offline")
-        api_key = payload.get("api_key")
+        llm_type = payload.get("llm")
+        if not llm_type:
+            # Check if GEMINI_API_KEY or OPENAI_API_KEY is available in environment
+            if os.environ.get("GEMINI_API_KEY"):
+                llm_type = "gemini"
+            elif os.environ.get("OPENAI_API_KEY"):
+                llm_type = "openai"
+            else:
+                llm_type = "offline"
+
+        api_key = payload.get("api_key") or os.environ.get("GEMINI_API_KEY" if llm_type == "gemini" else "OPENAI_API_KEY")
         model = payload.get("model")
         base_url = payload.get("base_url")
 
@@ -99,7 +113,9 @@ class RCAApiHandler(http.server.SimpleHTTPRequestHandler):
                 sim_cluster = scenario.build_cluster()
                 agent = SREInvestigationAgent(provider=sim_cluster, llm_client=llm)
                 report = agent.investigate(scenario.incident)
-                self._send_json(report.model_dump(mode="json"))
+                report_dict = report.model_dump(mode="json")
+                STORED_REPORTS.insert(0, report_dict)
+                self._send_json(report_dict)
             except Exception as e:
                 self._send_json({"error": f"Investigation failed: {str(e)}"}, status=500)
 
@@ -115,9 +131,42 @@ class RCAApiHandler(http.server.SimpleHTTPRequestHandler):
                 llm = self._resolve_llm_client(payload)
                 agent = SREInvestigationAgent(provider=provider, llm_client=llm)
                 report = agent.investigate(incident)
-                self._send_json(report.model_dump(mode="json"))
+                report_dict = report.model_dump(mode="json")
+                STORED_REPORTS.insert(0, report_dict)
+                self._send_json(report_dict)
             except Exception as e:
                 self._send_json({"error": f"Live cluster investigation failed: {str(e)}"}, status=500)
+
+        elif parsed.path == "/api/webhook/alertmanager":
+            alerts = payload.get("alerts", [])
+            results = []
+            for alt in alerts:
+                if alt.get("status") == "resolved":
+                    continue
+                labels = alt.get("labels", {})
+                annotations = alt.get("annotations", {})
+                alertname = labels.get("alertname", "K8sAlert")
+                ns = labels.get("namespace", "default")
+                svc = labels.get("service") or labels.get("app")
+                summary = annotations.get("summary") or annotations.get("description") or f"Alert {alertname} firing"
+                pod = labels.get("pod")
+                query = f"Alert {alertname}: {summary}"
+                if pod:
+                    query += f" (pod: {pod})"
+
+                try:
+                    provider = LiveK8sClusterProvider()
+                    incident = Incident(title=f"Alert: {alertname}", description=query, namespace=ns, affected_service=svc)
+                    llm = self._resolve_llm_client(payload)
+                    agent = SREInvestigationAgent(provider=provider, llm_client=llm)
+                    report = agent.investigate(incident)
+                    report_dict = report.model_dump(mode="json")
+                    STORED_REPORTS.insert(0, report_dict)
+                    results.append(report_dict)
+                except Exception as e:
+                    results.append({"alert": alertname, "error": str(e)})
+
+            self._send_json({"status": "received", "investigations": results})
         else:
             self._send_json({"error": "Endpoint not found"}, status=404)
 
@@ -152,7 +201,7 @@ def start_web_server(port: int = 8080) -> None:
             current_port += 1
 
     print(f"================================================================")
-    print(f"🚀 K8s-RCA AI Agent Web Dashboard running at: http://localhost:{current_port}")
+    print(f"[*] K8s-RCA AI Agent Web Dashboard running at: http://localhost:{current_port}")
     if current_port != port:
         print(f"   (Note: Port {port} was occupied, switched to port {current_port})")
     print(f"================================================================")
