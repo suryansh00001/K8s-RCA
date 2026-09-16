@@ -147,8 +147,23 @@ python -m k8s_rca.cli test-security
 ```
 
 ### 6. Run Model Context Protocol (MCP) Server
+The MCP server operates over **stdio (JSON-RPC 2.0)** to expose all sandboxed diagnostic tools directly to external AI agents (e.g., Claude Desktop, Cursor, Antigravity).
+
 ```bash
 python -m k8s_rca.cli mcp
+```
+*(Note: As a standard stdio server, it listens on `stdin` for JSON-RPC messages from an MCP client rather than providing an interactive shell prompt. Press `Ctrl+C` to stop.)*
+
+#### Quick Configuration for Claude Desktop / Cursor (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "k8s-rca": {
+      "command": "python",
+      "args": ["-m", "k8s_rca.cli", "mcp"]
+    }
+  }
+}
 ```
 
 ### 7. Run Web Dashboard

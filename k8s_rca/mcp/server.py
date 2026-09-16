@@ -111,24 +111,34 @@ class MCPServer:
 
     def run_stdio(self) -> None:
         """Run standard I/O loop processing JSON-RPC messages from stdin."""
-        for line in sys.stdin:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                req = json.loads(line)
-                resp = self.handle_request(req)
-                if resp is not None:
-                    sys.stdout.write(json.dumps(resp) + "\n")
+        sys.stderr.write("[k8s-rca-mcp] Server active (JSON-RPC 2.0 stdio). Waiting for client messages...\n")
+        if sys.stdin.isatty():
+            sys.stderr.write("[k8s-rca-mcp] Note: MCP servers communicate via stdio with MCP clients (e.g., Claude Desktop, Cursor).\n")
+            sys.stderr.write("[k8s-rca-mcp] Press Ctrl+C to exit.\n")
+        sys.stderr.flush()
+
+        try:
+            for line in sys.stdin:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    req = json.loads(line)
+                    resp = self.handle_request(req)
+                    if resp is not None:
+                        sys.stdout.write(json.dumps(resp) + "\n")
+                        sys.stdout.flush()
+                except json.JSONDecodeError:
+                    err_resp = {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {"code": -32700, "message": "Parse error: Invalid JSON"},
+                    }
+                    sys.stdout.write(json.dumps(err_resp) + "\n")
                     sys.stdout.flush()
-            except json.JSONDecodeError:
-                err_resp = {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "error": {"code": -32700, "message": "Parse error: Invalid JSON"},
-                }
-                sys.stdout.write(json.dumps(err_resp) + "\n")
-                sys.stdout.flush()
+        except KeyboardInterrupt:
+            sys.stderr.write("\n[k8s-rca-mcp] Server stopped.\n")
+            sys.stderr.flush()
 
 
 def start_mcp_server(provider: Optional[BaseClusterProvider] = None) -> None:
@@ -144,3 +154,4 @@ def start_mcp_server(provider: Optional[BaseClusterProvider] = None) -> None:
 
     server = MCPServer(provider=provider)
     server.run_stdio()
+
