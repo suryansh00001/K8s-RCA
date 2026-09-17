@@ -54,11 +54,21 @@ class CausalGraphBuilder:
 
         all_evidence = list(evidence_vault.values())
 
+        # Resolve informative root cause description
+        if conclusion_rationale and not conclusion_rationale.startswith("Primary hypothesis '"):
+            resolved_root_cause = conclusion_rationale
+        elif primary_hypothesis.description and not primary_hypothesis.description.startswith("Hypothesis "):
+            resolved_root_cause = primary_hypothesis.description
+        elif primary_hypothesis.reasoning:
+            resolved_root_cause = primary_hypothesis.reasoning
+        else:
+            resolved_root_cause = primary_hypothesis.title
+
         report = RCAReport(
             incident_id=incident.id,
             incident_title=incident.title,
             summary=incident.description,
-            root_cause=conclusion_rationale or primary_hypothesis.description or primary_hypothesis.title,
+            root_cause=resolved_root_cause,
             causal_chain=causal_chain,
             primary_hypothesis=primary_hypothesis,
             alternative_hypotheses=alternative_hypotheses,
@@ -96,9 +106,9 @@ class CausalGraphBuilder:
     ) -> List[CausalStep]:
         """Synthesize chronological failure propagation steps."""
         ev_ids = list(evidence.keys())
-        title_lower = hyp.title.lower()
+        search_text = f"{hyp.title} {hyp.description} {hyp.reasoning}".lower()
 
-        if "oom" in title_lower or "memory" in title_lower:
+        if "oom" in search_text or "memory" in search_text:
             return [
                 CausalStep(step_order=1, component="Deployment/Workload", phenomenon="High memory allocation or cache leak under incoming request volume", evidence_ids=ev_ids[:1]),
                 CausalStep(step_order=2, component="cgroup / Kernel", phenomenon="Process resident set size (RSS) exceeded configured container memory limit", evidence_ids=ev_ids[:2]),
@@ -106,40 +116,41 @@ class CausalGraphBuilder:
                 CausalStep(step_order=4, component="Kubelet", phenomenon="Kubelet detected container termination and initiated restart backoff loop", evidence_ids=ev_ids),
                 CausalStep(step_order=5, component="Service/Ingress", phenomenon="Endpoint unavailable causing connection resets and elevated error rate", evidence_ids=ev_ids),
             ]
-        elif "config" in title_lower or "secret" in title_lower or "not found" in title_lower:
+        elif "config" in search_text or "secret" in search_text or "not found" in search_text:
             return [
                 CausalStep(step_order=1, component="Manifest / Config", phenomenon="Deployment manifest updated with missing or misnamed ConfigMap/Secret key", evidence_ids=ev_ids[:1]),
                 CausalStep(step_order=2, component="Kubelet Pod Lifecycle", phenomenon="Kubelet failed container creation with CreateContainerConfigError", evidence_ids=ev_ids),
                 CausalStep(step_order=3, component="ReplicaSet / Service", phenomenon="Pod never reached Ready state, preventing deployment rollout from completing", evidence_ids=ev_ids),
             ]
-        elif "image" in title_lower or "pull" in title_lower:
+        elif "image" in search_text or "pull" in search_text:
             return [
                 CausalStep(step_order=1, component="CI/CD Release", phenomenon="Deployment updated with invalid image tag or unreachable registry repository", evidence_ids=ev_ids[:1]),
                 CausalStep(step_order=2, component="Container Runtime / Kubelet", phenomenon="Failed to pull image from registry with ErrImagePull / ImagePullBackOff", evidence_ids=ev_ids),
                 CausalStep(step_order=3, component="Deployment Controller", phenomenon="New replica pods fail to start; old pods may be terminated during rolling update", evidence_ids=ev_ids),
             ]
-        elif "panic" in title_lower or "exception" in title_lower or "crash" in title_lower:
+        elif "panic" in search_text or "exception" in search_text or "crash" in search_text:
             return [
                 CausalStep(step_order=1, component="Application Code", phenomenon="Application initialization encountered unhandled exception / fatal panic", evidence_ids=ev_ids[:1]),
                 CausalStep(step_order=2, component="Container Process", phenomenon="Main process exited immediately with non-zero exit code (Exit Code 1)", evidence_ids=ev_ids),
                 CausalStep(step_order=3, component="Kubelet", phenomenon="Kubelet entered CrashLoopBackOff with exponential retry delay", evidence_ids=ev_ids),
             ]
-        elif "throttl" in title_lower or "cpu" in title_lower:
+        elif "throttl" in search_text or "cpu" in search_text:
             return [
                 CausalStep(step_order=1, component="Workload Limits", phenomenon="CPU limits configured too low for workload concurrency requirements", evidence_ids=ev_ids[:1]),
                 CausalStep(step_order=2, component="CFS Quota / Kernel", phenomenon="Linux Completely Fair Scheduler throttled thread execution (>50% throttled time)", evidence_ids=ev_ids),
                 CausalStep(step_order=3, component="Application Latency", phenomenon="Processing latency increased exponentially, triggering upstream 504 Gateway Timeouts", evidence_ids=ev_ids),
             ]
-        elif "dependency" in title_lower or "database" in title_lower or "pool" in title_lower:
+        elif "dependency" in search_text or "database" in search_text or "pool" in search_text or "504" in search_text or "timeout" in search_text or "lock" in search_text:
             return [
-                CausalStep(step_order=1, component="Upstream Database", phenomenon="Database connection pool saturated under elevated transaction load", evidence_ids=ev_ids[:1]),
-                CausalStep(step_order=2, component="Application Backend", phenomenon="Worker threads blocked waiting on available connection leases", evidence_ids=ev_ids),
-                CausalStep(step_order=3, component="HTTP Gateway", phenomenon="Incoming client requests timed out, generating sudden spike in HTTP 500/503 responses", evidence_ids=ev_ids),
+                CausalStep(step_order=1, component="Upstream Database / Backend", phenomenon="Database connection pool saturated or row lock contention under transaction load", evidence_ids=ev_ids[:1]),
+                CausalStep(step_order=2, component="Application Microservice", phenomenon="Worker threads blocked waiting on available connection leases or downstream response", evidence_ids=ev_ids),
+                CausalStep(step_order=3, component="HTTP Gateway / Ingress", phenomenon="Incoming client requests timed out, generating sudden spike in HTTP 500/504 responses", evidence_ids=ev_ids),
             ]
         else:
+            phenom_2 = hyp.description or hyp.reasoning or "Telemetry metrics and logs confirm anomalous failure state"
             return [
                 CausalStep(step_order=1, component="Target Workload", phenomenon=hyp.title, evidence_ids=ev_ids[:1]),
-                CausalStep(step_order=2, component="Kubernetes Cluster", phenomenon=hyp.description, evidence_ids=ev_ids),
+                CausalStep(step_order=2, component="Kubernetes Cluster", phenomenon=phenom_2, evidence_ids=ev_ids),
                 CausalStep(step_order=3, component="Production Service", phenomenon=incident.description, evidence_ids=ev_ids),
             ]
 

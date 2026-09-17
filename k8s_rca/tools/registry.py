@@ -105,11 +105,13 @@ class ToolRegistry:
             # 1. Sanitize tool arguments through the security boundary
             sanitized_args = self.boundary.sanitize_arguments(tool_name, arguments)
 
-            # 2. Invoke tool
+            # 2. Invoke tool with parameters accepted by the target function
             if meta.func is None:
                 raise RuntimeError(f"Tool {tool_name} has no executable target function")
 
-            raw_result = meta.func(**sanitized_args)
+            sig = inspect.signature(meta.func)
+            valid_args = {k: v for k, v in sanitized_args.items() if k in sig.parameters}
+            raw_result = meta.func(**valid_args)
 
             # 3. Apply redaction to mask any credentials/secrets
             redacted_result = self.redactor.redact_data(raw_result)

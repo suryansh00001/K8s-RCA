@@ -88,15 +88,31 @@ class HypothesisManager:
             return
 
         if action == "create" or hid not in self.hypotheses:
+            title = update_dict.get("title")
+            desc = update_dict.get("description", "")
+            reasoning = update_dict.get("reasoning", "")
+            if not title or title.strip() == f"Hypothesis {hid}":
+                if desc:
+                    title = desc[:60]
+                elif reasoning:
+                    title = reasoning[:60]
+                else:
+                    title = f"Hypothesis {hid}"
             self.add_hypothesis(
                 hyp_id=hid,
-                title=update_dict.get("title", f"Hypothesis {hid}"),
-                description=update_dict.get("description", ""),
+                title=title,
+                description=desc or reasoning,
                 initial_confidence=float(update_dict.get("confidence", 0.5)),
                 iteration=iteration,
             )
+            if reasoning:
+                self.hypotheses[hid].reasoning = reasoning
         else:
             h = self.hypotheses[hid]
+            if "title" in update_dict and update_dict["title"]:
+                h.title = update_dict["title"]
+            if "description" in update_dict and update_dict["description"]:
+                h.description = update_dict["description"]
             if "confidence" in update_dict:
                 h.confidence = max(0.01, min(0.99, float(update_dict["confidence"])))
             if "status" in update_dict:
@@ -104,7 +120,7 @@ class HypothesisManager:
                 for s in HypothesisStatus:
                     if s.value == status_str:
                         h.status = s
-            if "reasoning" in update_dict:
+            if "reasoning" in update_dict and update_dict["reasoning"]:
                 h.reasoning = update_dict["reasoning"]
             h.last_updated_iteration = iteration
 

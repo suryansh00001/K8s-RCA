@@ -60,12 +60,48 @@ class SREInvestigationAgent:
         self.tool_registry.register_instance(ChangeCorrelator(self.provider))
         self.tool_registry.register_instance(TraceAnalyzer(self.provider))
 
+    def _init_default_hypotheses(self, incident: Incident) -> None:
+        """Seed initial competing SRE candidate hypotheses based on symptom class."""
+        self.hypothesis_manager.add_hypothesis(
+            hyp_id="H1",
+            title="Application Code Panic or Fatal Crash",
+            description="Process crashed due to uncaught runtime exception, missing environment variable, or startup panic.",
+            initial_confidence=0.4,
+        )
+        self.hypothesis_manager.add_hypothesis(
+            hyp_id="H2",
+            title="Container Memory Exhaustion (OOMKilled)",
+            description="Memory usage exceeded configured cgroup limits under load, invoking Linux kernel OOM killer (Exit Code 137).",
+            initial_confidence=0.4,
+        )
+        self.hypothesis_manager.add_hypothesis(
+            hyp_id="H3",
+            title="Configuration, Secret, or Image Reference Error",
+            description="Deployment references non-existent ConfigMap, invalid Secret, or unpullable image tag.",
+            initial_confidence=0.35,
+        )
+        self.hypothesis_manager.add_hypothesis(
+            hyp_id="H4",
+            title="Upstream / Downstream Microservice Dependency Contention",
+            description="Downstream database or microservice saturation/deadlock causing cascading timeouts and error spikes.",
+            initial_confidence=0.35,
+        )
+        self.hypothesis_manager.add_hypothesis(
+            hyp_id="H5",
+            title="Resource Throttling or Probe Misconfiguration",
+            description="Severe CPU throttling (>80%) or aggressive probe timeouts causing pod unreadiness.",
+            initial_confidence=0.3,
+        )
+
     def investigate(self, incident: Incident) -> RCAReport:
         """
         Execute the full autonomous SRE investigation loop for the given incident.
         """
         start_time = time.perf_counter()
         tool_schemas = self.tool_registry.get_tool_schemas()
+
+        if not self.hypothesis_manager.hypotheses:
+            self._init_default_hypotheses(incident)
 
         iteration = 0
         max_iter = self.config.max_iterations
@@ -92,7 +128,7 @@ class SREInvestigationAgent:
             for update in action.hypothesis_updates:
                 self.hypothesis_manager.apply_update(update, iteration=iteration)
 
-            # 3. Check for conclusion
+            # 3. Check for explicit conclusion
             if action.is_concluded:
                 conclusion_rationale = action.conclusion_rationale
                 break
@@ -104,15 +140,21 @@ class SREInvestigationAgent:
 
                 # Extract and record evidence from tool result
                 self._extract_and_record_evidence(record, action.tool_name, incident)
+            else:
+                # Model chose not to execute any further tools
+                conclusion_rationale = action.conclusion_rationale
+                break
 
             # 5. Check confidence early termination condition
-            primary = self.hypothesis_manager.get_primary_hypothesis()
-            if primary and primary.confidence >= self.config.confidence_termination_threshold:
-                alts = self.hypothesis_manager.get_alternative_hypotheses()
-                gap = primary.confidence - (alts[0].confidence if alts else 0.0)
-                if gap >= self.config.min_confidence_diff_to_terminate:
-                    conclusion_rationale = f"Primary hypothesis '{primary.title}' reached definitive confidence ({primary.confidence*100:.1f}%)."
-                    break
+            # Only terminate early if sufficient iterations have run to gather cross-telemetry evidence
+            if iteration >= 4:
+                primary = self.hypothesis_manager.get_primary_hypothesis()
+                if primary and primary.confidence >= self.config.confidence_termination_threshold:
+                    alts = self.hypothesis_manager.get_alternative_hypotheses()
+                    gap = primary.confidence - (alts[0].confidence if alts else 0.0)
+                    if gap >= self.config.min_confidence_diff_to_terminate:
+                        conclusion_rationale = action.conclusion_rationale or primary.description or primary.reasoning
+                        break
 
         elapsed = time.perf_counter() - start_time
 
@@ -126,6 +168,9 @@ class SREInvestigationAgent:
                 description="Unable to definitively isolate root cause from available telemetry.",
                 initial_confidence=0.3,
             )
+
+        if not conclusion_rationale:
+            conclusion_rationale = primary.description or primary.reasoning or primary.title
 
         alts = self.hypothesis_manager.get_alternative_hypotheses()
         report = self.causal_builder.build_report(
